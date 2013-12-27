@@ -50,6 +50,11 @@ int main(int argc, char** argv) {
   TaskScheduler* scheduler = BasicTaskScheduler::createNew();
   env = BasicUsageEnvironment::createNew(*scheduler);
 
+  if (argc == 1) {
+    *env << "Usage: " << argv[0] << " [-f file] [-I iface address] [-m mcast address] [-p rtp port]\n";
+    exit(1);
+  }
+
   // Create 'groupsocks' for RTP and RTCP:
   char const* destinationAddressStr
 #ifdef USE_SSM
@@ -61,9 +66,38 @@ int main(int argc, char** argv) {
   // of the (single) destination.  (You may also need to make a similar
   // change to the receiver program.)
 #endif
-  const unsigned short rtpPortNum = 1234;
-  const unsigned short rtcpPortNum = rtpPortNum+1;
+  char const* sendingInterfaceAddrStr = "0.0.0.0";
+  unsigned short rtpPortNum = 1234;
+  unsigned short rtcpPortNum = rtpPortNum+1;
   const unsigned char ttl = 7; // low, in case routers don't admin scope
+
+  int ch;
+  while ((ch = getopt(argc, argv, "f:I:m:p:")) != EOF) {
+    switch(ch) {
+      case 'f':
+        inputFileName = optarg;
+        break;
+      case 'I': {
+        sendingInterfaceAddrStr = optarg;
+        NetAddressList addresses(sendingInterfaceAddrStr);
+        if (addresses.numAddresses() == 0) {
+          *env << "Failed to find network address for \"" << optarg << "\"\n";
+          exit(1);
+        }
+        SendingInterfaceAddr = *(unsigned*)(addresses.firstAddress()->data());
+        break;
+      }
+      case 'm':
+        destinationAddressStr = optarg;
+        break;
+      case 'p':
+        rtpPortNum = atoi(optarg);
+        rtcpPortNum = rtpPortNum+1;
+        break;
+      default:
+        break;
+    }
+  }
 
   struct in_addr destinationAddress;
   destinationAddress.s_addr = our_inet_addr(destinationAddressStr);
@@ -119,6 +153,10 @@ int main(int argc, char** argv) {
 
   // Finally, start the streaming:
   *env << "Beginning streaming...\n";
+  *env << "Multicast address: " << destinationAddressStr << "\n";
+  *env << "Interface address: " << sendingInterfaceAddrStr << "\n";
+  *env << "RTP port: " << rtpPortNum << "\n";
+  *env << "File: " << inputFileName << "\n";
   play();
 
   env->taskScheduler().doEventLoop(); // does not return
